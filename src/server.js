@@ -162,7 +162,7 @@ app.get("/dashboard", requireAuth, (req, res) => {
   };
   const tickets = db.prepare("SELECT t.*, c.name as cat_name, c.color as cat_color, u.name as assignee_name FROM tickets t LEFT JOIN categories c ON t.category_id=c.id LEFT JOIN users u ON t.assigned_to=u.id ORDER BY t.created_at DESC LIMIT 15").all();
   const byStatus = db.prepare("SELECT status, COUNT(*) as count FROM tickets GROUP BY status").all();
-  const byDay = db.prepare("SELECT DATE(created_at) as day, COUNT(*) as cnt FROM tickets WHERE created_at >= datetime('now', '-7 days') GROUP BY day ORDER BY day").all();
+  const byDay = db.prepare("SELECT DATE(created_at) as day, COUNT(*) as count FROM tickets WHERE created_at >= datetime('now', '-7 days') GROUP BY day ORDER BY day").all();
   const avgHours = db.prepare("SELECT AVG((julianday(resolved_at)-julianday(created_at))*24) as h FROM tickets WHERE resolved_at IS NOT NULL").get().h;
   const avgRating = db.prepare("SELECT AVG(rating) as r FROM tickets WHERE rating IS NOT NULL").get().r;
   const chartStats = { byStatus, byDay, avgHours, avgRating };
