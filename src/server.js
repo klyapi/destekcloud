@@ -156,9 +156,9 @@ app.post("/setup", (req, res) => {
 app.get("/dashboard", requireAuth, (req, res) => {
   const stats = {
     total: db.prepare("SELECT COUNT(*) as c FROM tickets").get().c,
-    open: db.prepare("SELECT COUNT(*) as c FROM tickets WHERE status='open'").get().c,
+    active: db.prepare("SELECT COUNT(*) as c FROM tickets WHERE status NOT IN ('resolved','closed')").get().c,
     urgent: db.prepare("SELECT COUNT(*) as c FROM tickets WHERE priority='urgent' AND status NOT IN ('resolved','closed')").get().c,
-    resolved: db.prepare("SELECT COUNT(*) as c FROM tickets WHERE status IN ('resolved','closed')").get().c,
+    done: db.prepare("SELECT COUNT(*) as c FROM tickets WHERE status IN ('resolved','closed')").get().c,
   };
   const tickets = db.prepare("SELECT t.*, c.name as cat_name, c.color as cat_color, u.name as assignee_name FROM tickets t LEFT JOIN categories c ON t.category_id=c.id LEFT JOIN users u ON t.assigned_to=u.id ORDER BY t.created_at DESC LIMIT 15").all();
   const byStatus = db.prepare("SELECT status, COUNT(*) as count FROM tickets GROUP BY status").all();
@@ -190,7 +190,9 @@ app.get("/tickets", requireAuth, (req, res) => {
   const tickets = db.prepare(`SELECT t.*, c.name as cat_name, c.color as cat_color, u.name as assignee_name FROM tickets t LEFT JOIN categories c ON t.category_id=c.id LEFT JOIN users u ON t.assigned_to=u.id WHERE ${where} ORDER BY t.created_at DESC LIMIT ? OFFSET ?`).all(...params, PER_PAGE, offset);
   const categories = db.prepare("SELECT * FROM categories ORDER BY rank,name").all();
   const agents = db.prepare("SELECT * FROM users WHERE is_active=1 ORDER BY name").all();
-  res.send(views.ticketsPage(req, { tickets, total, page: parseInt(page), perPage: PER_PAGE, categories, agents, filters: { status, priority, category, q, assignee } }));
+  const statuses = ["open", "in_progress", "waiting", "resolved", "closed"];
+  const months = db.prepare("SELECT DISTINCT strftime('%Y-%m', created_at) as month FROM tickets ORDER BY month DESC LIMIT 12").all().map(r => r.month);
+  res.send(views.ticketsPage(req, { tickets, total, page: parseInt(page), perPage: PER_PAGE, categories, agents, statuses, months, filters: { status, priority, category, q, assignee } }));
 });
 
 app.get("/tickets/new", requireAuth, (req, res) => {
@@ -227,7 +229,9 @@ app.get("/tickets/:id", requireAuth, (req, res) => {
   const agents = db.prepare("SELECT * FROM users WHERE is_active=1 ORDER BY name").all();
   const quickReplies = db.prepare("SELECT * FROM quick_replies ORDER BY title").all();
   const auditLogs = db.prepare("SELECT a.*, u.name as user_name FROM audit_logs a LEFT JOIN users u ON a.user_id=u.id WHERE a.ticket_id=? ORDER BY a.created_at DESC LIMIT 20").all(ticket.id);
-  res.send(views.ticketDetailPage(req, { ticket, comments, attachments, tags, allTags, categories, agents, quickReplies, auditLogs }));
+  const statuses = ["open", "in_progress", "waiting", "resolved", "closed"];
+  const priorities = ["low", "normal", "high", "urgent"];
+  res.send(views.ticketDetailPage(req, { ticket, comments, attachments, tags, allTags, categories, agents, quickReplies, auditLogs, statuses, priorities }));
 });
 
 app.post("/tickets/:id/comment", requireAuth, upload.array("files", 5), (req, res) => {
@@ -365,10 +369,13 @@ app.post("/talep/:token/close", (req, res) => {
 
 // ── ROUTES: ADMIN ─────────────────────────────────────────────
 app.get("/admin/reports", requireAuth, (req, res) => {
-  const monthly = db.prepare("SELECT strftime('%Y-%m',created_at) as month, COUNT(*) as total, SUM(CASE WHEN status IN ('resolved','closed') THEN 1 ELSE 0 END) as resolved, AVG(CASE WHEN resolved_at IS NOT NULL THEN (julianday(resolved_at)-julianday(created_at))*24 END) as avg_hours FROM tickets GROUP BY month ORDER BY month DESC LIMIT 12").all();
-  const byCategory = db.prepare("SELECT c.name as category, COUNT(*) as total, SUM(CASE WHEN t.status IN ('resolved','closed') THEN 1 ELSE 0 END) as resolved FROM tickets t LEFT JOIN categories c ON t.category_id=c.id GROUP BY t.category_id ORDER BY total DESC").all();
-  const byPriority = db.prepare("SELECT priority, COUNT(*) as total, SUM(CASE WHEN status IN ('resolved','closed') THEN 1 ELSE 0 END) as resolved, AVG(CASE WHEN resolved_at IS NOT NULL THEN (julianday(resolved_at)-julianday(created_at))*24 END) as avg_hours FROM tickets GROUP BY priority").all();
-  res.send(views.reportsPage(req, { monthly, byCategory, byPriority }));
+  const monthlyStats = db.prepare("SELECT strftime('%Y-%m',created_at) as month, COUNT(*) as total, SUM(CASE WHEN status IN ('resolved','closed') THEN 1 ELSE 0 END) as resolved, AVG(CASE WHEN resolved_at IS NOT NULL THEN (julianday(resolved_at)-julianday(created_at))*24 END) as avg_hours FROM tickets GROUP BY month ORDER BY month DESC LIMIT 12").all();
+  const categoryStats = db.prepare("SELECT c.name as category, COUNT(*) as total, SUM(CASE WHEN t.status IN ('resolved','closed') THEN 1 ELSE 0 END) as resolved FROM tickets t LEFT JOIN categories c ON t.category_id=c.id GROUP BY t.category_id ORDER BY total DESC").all();
+  const resolutionByPriority = db.prepare("SELECT priority, COUNT(*) as total, SUM(CASE WHEN status IN ('resolved','closed') THEN 1 ELSE 0 END) as resolved, AVG(CASE WHEN resolved_at IS NOT NULL THEN (julianday(resolved_at)-julianday(created_at))*24 END) as avg_hours FROM tickets GROUP BY priority").all();
+  const categories = db.prepare("SELECT * FROM categories ORDER BY rank,name").all();
+  const agents = db.prepare("SELECT * FROM users WHERE is_active=1 ORDER BY name").all();
+  const statuses = ["open", "in_progress", "waiting", "resolved", "closed"];
+  res.send(views.reportsPage(req, { monthlyStats, categoryStats, resolutionByPriority, categories, agents, statuses }));
 });
 
 app.get("/admin/quick-replies", requireAuth, (req, res) => {

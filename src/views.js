@@ -172,7 +172,7 @@ function locationOptions(current = "") {
 }
 
 function parseThemeCookie(req) {
-  const match = (req.headers.cookie || "").match(/(?:^|;\s*)theme=([^;]+)/);
+  const match = ((req.headers && req.headers.cookie) || "").match(/(?:^|;\s*)theme=([^;]+)/);
   if (!match) return null;
   const val = decodeURIComponent(match[1]);
   return val === "dark" || val === "light" ? val : null;
