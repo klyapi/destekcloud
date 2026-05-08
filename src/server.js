@@ -48,10 +48,19 @@ app.use((req, res, next) => {
 
 // ── CSRF ──────────────────────────────────────────────────────
 app.use((req, res, next) => {
-  if (!req.session.csrfToken) req.session.csrfToken = crypto.randomBytes(24).toString("hex");
+  if (!req.session.csrfToken) {
+    req.session.csrfToken = crypto.randomBytes(24).toString("hex");
+  }
   if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
     const token = req.body?._csrf || req.headers["x-csrf-token"];
-    if (token !== req.session.csrfToken) return res.status(403).send("CSRF hatası");
+    if (!token || token !== req.session.csrfToken) {
+      // Session yeniyse token yoktur, yenile ve devam et
+      if (!token) {
+        req.session.csrfToken = crypto.randomBytes(24).toString("hex");
+        return res.redirect(req.originalUrl);
+      }
+      return res.status(403).send("Güvenlik hatası. Lütfen sayfayı yenileyip tekrar deneyin.");
+    }
   }
   next();
 });
