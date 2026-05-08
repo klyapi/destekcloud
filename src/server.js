@@ -198,7 +198,8 @@ app.get("/tickets", requireAuth, (req, res) => {
 app.get("/tickets/new", requireAuth, (req, res) => {
   const categories = db.prepare("SELECT * FROM categories ORDER BY rank,name").all();
   const agents = db.prepare("SELECT * FROM users WHERE is_active=1 ORDER BY name").all();
-  res.send(views.newTicketPage(req, { categories, agents }));
+  const priorities = ["low", "normal", "high", "urgent"];
+  res.send(views.newTicketPage(req, { categories, agents, priorities }));
 });
 
 app.post("/tickets/new", requireAuth, upload.array("files", 5), (req, res) => {
@@ -220,7 +221,7 @@ app.post("/tickets/new", requireAuth, upload.array("files", 5), (req, res) => {
 
 app.get("/tickets/:id", requireAuth, (req, res) => {
   const ticket = db.prepare("SELECT t.*, c.name as cat_name, c.color as cat_color, u.name as assignee_name FROM tickets t LEFT JOIN categories c ON t.category_id=c.id LEFT JOIN users u ON t.assigned_to=u.id WHERE t.id=?").get(req.params.id);
-  if (!ticket) return res.status(404).send(views.errorPage(req, 404, "Talep bulunamadı"));
+  if (!ticket) return res.status(404).send(views.errorPage(req, { title: "Bulunamadı", message: "Talep bulunamadı" }));
   const comments = db.prepare("SELECT c.*, u.name as user_name, u.role as user_role FROM comments c LEFT JOIN users u ON c.user_id=u.id WHERE c.ticket_id=? ORDER BY c.created_at").all(ticket.id);
   const attachments = db.prepare("SELECT * FROM attachments WHERE ticket_id=?").all(ticket.id);
   const tags = db.prepare("SELECT t.* FROM tags t JOIN ticket_tags tt ON t.id=tt.tag_id WHERE tt.ticket_id=?").all(ticket.id);
@@ -325,24 +326,29 @@ app.post("/talep", upload.array("files", 5), (req, res) => {
 
 app.get("/talep/tesekkurler", (req, res) => {
   const ticket = db.prepare("SELECT * FROM tickets WHERE public_token=?").get(req.query.token);
-  res.send(views.publicTicketSuccessPage(req, { ticket }));
+  if (!ticket) return res.redirect("/talep");
+  const followPath = `/talep/${ticket.public_token}`;
+  res.send(views.publicTicketSuccessPage(req, { ticket, ticketNo: ticket.ticket_no, ticketId: ticket.id, followPath, attachments: [], comments: [], canReply: true }));
 });
 
 app.get("/talep/ara", (req, res) => {
-  const { q, email } = req.query;
+  const { q, contact } = req.query;
   let tickets = [];
-  if (q || email) {
-    tickets = db.prepare("SELECT * FROM tickets WHERE (ticket_no=? OR requester_email=?) ORDER BY created_at DESC LIMIT 10").all(q || "", email || "");
+  const searched = !!(q || contact);
+  if (searched) {
+    tickets = db.prepare("SELECT * FROM tickets WHERE (ticket_no=? OR requester_email=?) ORDER BY created_at DESC LIMIT 10").all(q || "", contact || "");
   }
-  res.send(views.publicSearchPage(req, { tickets, q, email }));
+  res.send(views.ticketSearchPage(req, { q: q || "", contact: contact || "", searched, rateLimited: false }));
 });
 
 app.get("/talep/:token", (req, res) => {
   const ticket = db.prepare("SELECT t.*, c.name as cat_name FROM tickets t LEFT JOIN categories c ON t.category_id=c.id WHERE t.public_token=?").get(req.params.token);
-  if (!ticket) return res.status(404).send(views.errorPage(req, 404, "Talep bulunamadı"));
+  if (!ticket) return res.status(404).send(views.errorPage(req, { title: "Bulunamadı", message: "Talep bulunamadı" }));
   const comments = db.prepare("SELECT c.*, u.name as user_name FROM comments c LEFT JOIN users u ON c.user_id=u.id WHERE c.ticket_id=? AND c.is_internal=0 ORDER BY c.created_at").all(ticket.id);
   const attachments = db.prepare("SELECT * FROM attachments WHERE ticket_id=?").all(ticket.id);
-  res.send(views.publicTicketChatPage(req, { ticket, comments, attachments }));
+  const canReply = !["resolved", "closed"].includes(ticket.status);
+  const followPath = `/talep/${ticket.public_token}`;
+  res.send(views.publicTicketChatPage(req, { ticket, comments, attachments, canReply, followPath }));
 });
 
 app.post("/talep/:token/reply", upload.array("files", 3), (req, res) => {
@@ -505,12 +511,12 @@ app.get("/api/tickets/:id/stream", (req, res) => {
 });
 
 // ── 404 ───────────────────────────────────────────────────────
-app.use((req, res) => res.status(404).send(views.errorPage(req, 404, "Sayfa bulunamadı")));
+app.use((req, res) => res.status(404).send(views.errorPage(req, { title: "Sayfa Bulunamadı", message: "Aradığınız sayfa mevcut değil." })));
 
 // ── ERROR ─────────────────────────────────────────────────────
 app.use((err, req, res, next) => {
   console.error(err);
-  res.status(500).send(views.errorPage(req, 500, "Sunucu hatası"));
+  res.status(500).send(views.errorPage(req, { title: "Sunucu Hatası", message: "Beklenmedik bir hata oluştu." }));
 });
 
 // ── START ─────────────────────────────────────────────────────
