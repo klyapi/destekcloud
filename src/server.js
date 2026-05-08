@@ -89,13 +89,11 @@ function requireAdmin(req, res, next) {
 }
 
 // ── FLASH ─────────────────────────────────────────────────────
-function setFlash(req, type, msg) { req.session.flash = { type, msg }; }
-function getFlash(req) {
-  const f = req.session.flash;
-  req.session.flash = null;
-  return f;
-}
-app.use((req, res, next) => { req.flash = (type, msg) => setFlash(req, type, msg); req.getFlash = () => getFlash(req); next(); });
+app.use((req, res, next) => {
+  req.flash = (type, msg) => { req.session.flash = { type, msg }; };
+  req.getFlash = () => { const f = req.session.flash || null; req.session.flash = null; return f; };
+  next();
+});
 
 // ── ROUTES: AUTH ──────────────────────────────────────────────
 app.get("/", (req, res) => res.redirect(req.session.userId ? "/dashboard" : "/talep"));
@@ -290,7 +288,8 @@ app.get("/talep", (req, res) => {
   const lastToken = req.session.lastSubmittedToken;
   const lastTicket = lastToken ? db.prepare("SELECT * FROM tickets WHERE public_token=?").get(lastToken) : null;
   const categories = db.prepare("SELECT * FROM categories ORDER BY rank,name").all();
-  res.send(views.publicTicketPage(req, { categories, lastTicket }));
+  const priorities = ["low", "normal", "high", "urgent"];
+  res.send(views.publicTicketPage(req, { categories, lastTicket, priorities }));
 });
 
 app.post("/talep", upload.array("files", 5), (req, res) => {

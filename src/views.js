@@ -436,7 +436,8 @@ function flash(req) {
   const message = req.session.flash;
   if (!message) return "";
   delete req.session.flash;
-  return `<div class="notice notice-${escapeHtml(message.type)}" role="status">${escapeHtml(message.text)}</div>`;
+  const text = message.text || message.msg || "";
+  return `<div class="notice notice-${escapeHtml(message.type)}" role="status">${escapeHtml(text)}</div>`;
 }
 
 function layout(req, { title, body, actions = "", publicOnly = false, pageClass = "", showPageHeading = true }) {
@@ -772,7 +773,7 @@ function loginPage(req) {
   });
 }
 
-function publicTicketPage(req, { priorities, departments = [] }) {
+function publicTicketPage(req, { priorities = ["low","normal","high","urgent"], categories = [], departments = [], lastTicket = null }) {
   return layout(req, {
     title: "Destek Talebi Aç",
     pageClass: "support-page",
